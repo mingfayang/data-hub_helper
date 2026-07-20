@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from hms_export.pipeline import (
+    chmod_hdfs_output,
     delete_hdfs_snapshot,
     delete_local_snapshot,
     join_hdfs_path,
@@ -69,6 +70,12 @@ def test_delete_hdfs_snapshot_builds_hdfs_rm_command() -> None:
     runner = RecordingRunner()
     delete_hdfs_snapshot("hdfs:///tmp/snapshots/snapshot-1", hdfs_bin="hdfs", runner=runner)
     assert runner.commands == [["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///tmp/snapshots/snapshot-1"]]
+
+
+def test_chmod_hdfs_output_builds_hdfs_chmod_command() -> None:
+    runner = RecordingRunner()
+    chmod_hdfs_output("hdfs:///tmp/output/snapshot-1", hdfs_bin="hdfs", runner=runner)
+    assert runner.commands == [["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///tmp/output/snapshot-1"]]
 
 
 def test_spark_submit_transform_builds_command() -> None:
@@ -217,7 +224,8 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
         "jobs/transform_hms.py",
     ]
     assert runner.commands[2][-2:] == ["--max-file-size", "20k"]
-    assert runner.commands[3] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
+    assert runner.commands[3] == ["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///outputs/snapshot-1"]
+    assert runner.commands[4] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
 
 
 def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:

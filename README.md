@@ -78,7 +78,8 @@ python scripts/run_hms_pipeline.py \
 2. 用 `hdfs dfs -put` 上传快照目录到 `hdfs.snapshot_dir/snapshot-id`；
 3. 上传成功后删除本地 snapshot 目录；
 4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到 `hdfs.output_dir/snapshot-id`；
-5. Spark 成功生成 JSONL 输出后删除 HDFS snapshot 目录。
+5. Spark 成功生成 JSONL 输出后执行 `hdfs dfs -chmod -R 777 hdfs.output_dir/snapshot-id`；
+6. 删除 HDFS snapshot 目录。
 
 生产常用参数可以在命令行覆盖：
 

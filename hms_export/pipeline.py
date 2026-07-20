@@ -56,6 +56,14 @@ def delete_hdfs_snapshot(
     runner([hdfs_bin, "dfs", "-rm", "-r", "-f", hdfs_snapshot])
 
 
+def chmod_hdfs_output(
+    hdfs_output: str,
+    hdfs_bin: str = "hdfs",
+    runner: CommandRunner = default_runner,
+) -> None:
+    runner([hdfs_bin, "dfs", "-chmod", "-R", "777", hdfs_output])
+
+
 def spark_submit_transform(
     snapshot: str,
     output: str,
@@ -238,6 +246,7 @@ def run_pipeline(
         runner=runner,
     )
     if hdfs_enabled:
+        chmod_hdfs_output(spark_output, hdfs_bin, runner)
         delete_hdfs_snapshot(hdfs_snapshot, hdfs_bin, runner)
 
     result = PipelineResult(local_snapshot, hdfs_snapshot, spark_output)
