@@ -1,4 +1,0 @@
-{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.test_table_032,UAT)","changeType":"UPSERT","aspectName":"subTypes","aspect":{"value":"{\"typeNames\":[\"Table\"]}","contentType":"application/json"}}
-{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.test_table_020,UAT)","changeType":"UPSERT","aspectName":"container","aspect":{"value":"{\"container\":\"urn:li:container:e54ef56e98d8c2ef208b1de5579d282f\"}","contentType":"application/json"}}
-{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.test_table_068,UAT)","changeType":"UPSERT","aspectName":"subTypes","aspect":{"value":"{\"typeNames\":[\"Table\"]}","contentType":"application/json"}}
-{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.test_table_008,UAT)","changeType":"UPSERT","aspectName":"subTypes","aspect":{"value":"{\"typeNames\":[\"Table\"]}","contentType":"application/json"}}

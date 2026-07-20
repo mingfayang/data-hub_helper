@@ -1,13 +1,12 @@
 source:
   type: hive-metastore
   config:
-    connection_type: sql
     host_port: "127.0.0.1:3306"
-    metastore_db_name: "hive_metastore_test"
-    database: "hive"
-    database_pattern:
+    database: "hive_metastore_test"
+    platform_instance: "hive"
+    schema_pattern:
       allow:
-        - "^hive$"
+        - ".*"
     username: "hive_test"
     password: "hive_test_password"
     scheme: "mysql+pymysql"

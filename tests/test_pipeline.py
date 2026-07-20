@@ -103,6 +103,7 @@ def test_spark_submit_transform_builds_command() -> None:
         job_file=Path("jobs/transform_hms.py"),
         env="UAT",
         platform="hive",
+        platform_instance="hive",
         database_pattern="^hive$",
         metastore_name="hive_metastore_test",
         source_timezone="Asia/Shanghai",
@@ -152,6 +153,8 @@ def test_spark_submit_transform_builds_command() -> None:
         "--env",
         "UAT",
         "--platform",
+        "hive",
+        "--platform-instance",
         "hive",
         "--database-pattern",
         "^hive$",
@@ -203,10 +206,10 @@ def test_validate_pipeline_config_rejects_invalid_spark_resource_counts(tmp_path
         validate_pipeline_config(config)
 
 
-def test_validate_pipeline_config_rejects_invalid_metastore_name(tmp_path: Path) -> None:
+def test_validate_pipeline_config_rejects_invalid_mysql_database_for_output_dir(tmp_path: Path) -> None:
     config = minimal_config(tmp_path)
-    config["spark"]["metastore_name"] = "bad/name"
-    with pytest.raises(ValueError, match="metastore_name"):
+    config["mysql"]["database"] = "bad/name"
+    with pytest.raises(ValueError, match="mysql.database"):
         validate_pipeline_config(config)
 
 
@@ -229,7 +232,7 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
     assert create_snapshot.call_args.args[0]["snapshot"]["tables"] == list(DEFAULT_HMS_TABLES)
     assert result.local_snapshot == local_snapshot
     assert result.hdfs_snapshot == "hdfs:///snapshots/snapshot-1"
-    assert result.hdfs_output == "hdfs:///outputs/hive_metastore"
+    assert result.hdfs_output == "hdfs:///outputs/hive"
     assert runner.commands[0] == ["hdfs", "dfs", "-mkdir", "-p", "hdfs:///snapshots"]
     assert runner.commands[1] == ["hdfs", "dfs", "-put", str(local_snapshot), "hdfs:///snapshots"]
     assert not local_snapshot.exists()
@@ -247,21 +250,24 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
         "jobs/transform_hms.py",
     ]
     assert runner.commands[2][-2:] == ["--max-file-size", "20k"]
-    assert runner.commands[3] == ["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///outputs/hive_metastore"]
+    assert runner.commands[3] == ["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///outputs/hive"]
     assert runner.commands[4] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
 
 
-def test_run_pipeline_uses_metastore_name_for_fixed_spark_output(tmp_path: Path) -> None:
+def test_run_pipeline_uses_mysql_database_for_fixed_spark_output(tmp_path: Path) -> None:
     runner = RecordingRunner()
     local_snapshot = tmp_path / "snapshot-1"
     local_snapshot.mkdir()
     config = minimal_config(tmp_path)
-    config["spark"] = {"env": "UAT", "metastore_name": "prod_metastore"}
+    config["mysql"]["database"] = "prod_metastore"
+    config["spark"] = {"env": "UAT"}
     with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot):
         result = run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
     assert result.hdfs_output == "hdfs:///outputs/prod_metastore"
     assert "--output" in runner.commands[2]
     assert runner.commands[2][runner.commands[2].index("--output") + 1] == "hdfs:///outputs/prod_metastore"
+    assert runner.commands[2][runner.commands[2].index("--platform-instance") + 1] == "hive"
+    assert runner.commands[2][runner.commands[2].index("--metastore-name") + 1] == "prod_metastore"
 
 
 def test_run_pipeline_can_overwrite_spark_output(tmp_path: Path) -> None:
@@ -272,7 +278,7 @@ def test_run_pipeline_can_overwrite_spark_output(tmp_path: Path) -> None:
     config["spark"] = {"env": "UAT", "overwrite_output": True}
     with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot):
         run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
-    assert runner.commands[2] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///outputs/hive_metastore"]
+    assert runner.commands[2] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///outputs/hive"]
     assert runner.commands[3][0] == "spark-submit"
 
 
@@ -286,7 +292,7 @@ def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:
     with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot):
         result = run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
     assert result.hdfs_snapshot == str(local_snapshot)
-    assert result.hdfs_output == str(tmp_path / "outputs" / "hive_metastore")
+    assert result.hdfs_output == str(tmp_path / "outputs" / "hive")
     assert local_snapshot.exists()
     assert runner.commands[0][0] == "spark-submit"
 
@@ -295,7 +301,7 @@ def test_run_pipeline_can_overwrite_local_spark_output_when_hdfs_is_disabled(tmp
     runner = RecordingRunner()
     local_snapshot = tmp_path / "snapshot-1"
     local_snapshot.mkdir()
-    output = tmp_path / "outputs" / "hive_metastore"
+    output = tmp_path / "outputs" / "hive"
     output.mkdir(parents=True)
     (output / "part-00000").write_text("{}\n")
     config = minimal_config(tmp_path)

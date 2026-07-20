@@ -79,7 +79,7 @@ def main() -> None:
         "--overwrite-spark-output",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="delete hdfs.output_dir/metastore_name before spark-submit; default keeps Spark errorifexists behavior",
+        help="delete hdfs.output_dir/mysql.database before spark-submit; default keeps Spark errorifexists behavior",
     )
     parser.add_argument(
         "--spark-conf",
@@ -89,8 +89,8 @@ def main() -> None:
     )
     parser.add_argument("--env", help="DataHub env, for example UAT or PROD")
     parser.add_argument("--platform", help="DataHub platform, default hive")
+    parser.add_argument("--platform-instance", help="DataHub platform_instance, default follows --platform")
     parser.add_argument("--database-pattern", help="Hive database regex")
-    parser.add_argument("--metastore-name", help="Root metastore container name")
     parser.add_argument("--source-timezone", help="Hive metastore source timezone")
     parser.add_argument(
         "--single-file",
@@ -152,8 +152,8 @@ def main() -> None:
         spark["conf"] = args.spark_conf
     set_if_present(spark, "env", args.env)
     set_if_present(spark, "platform", args.platform)
+    set_if_present(spark, "platform_instance", args.platform_instance)
     set_if_present(spark, "database_pattern", args.database_pattern)
-    set_if_present(spark, "metastore_name", args.metastore_name)
     set_if_present(spark, "source_timezone", args.source_timezone)
     set_if_present(spark, "single_file", args.single_file)
     set_if_present(spark, "max_file_size", args.max_file_size)

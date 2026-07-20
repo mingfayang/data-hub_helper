@@ -73,30 +73,47 @@ def mcp(entity_type: str, urn: Any, aspect_name: str, aspect: Any) -> Any:
     )
 
 
-def dataset_urn(platform: str, name: Any, env: str) -> Any:
+def dataset_urn(platform: str, name: Any, env: str, platform_instance: str | None = None) -> Any:
+    dataset_name = F.concat(F.lit(f"{platform_instance}."), name) if platform_instance else name
     return F.concat(
-        F.lit(f"urn:li:dataset:(urn:li:dataPlatform:{platform},"), name,
+        F.lit(f"urn:li:dataset:(urn:li:dataPlatform:{platform},"), dataset_name,
         F.lit(f",{env.upper()})"),
     )
 
 
-def container_urn(platform: str, database: Any, env: str) -> Any:
+def container_urn(platform: str, database: Any, env: str, platform_instance: str | None = None) -> Any:
     guid_json = F.to_json(F.struct(
         database.alias("database"),
-        F.lit(env.upper()).alias("instance"),
+        F.lit(platform_instance or env.upper()).alias("instance"),
         F.lit(platform).alias("platform"),
     ))
     return F.concat(F.lit("urn:li:container:"), F.md5(guid_json))
 
 
-def schema_container_urn(platform: str, database: Any, schema: Any, env: str) -> Any:
+def schema_container_urn(
+    platform: str,
+    database: Any,
+    schema: Any,
+    env: str,
+    platform_instance: str | None = None,
+) -> Any:
     guid_json = F.to_json(F.struct(
         database.alias("database"),
-        F.lit(env.upper()).alias("instance"),
+        F.lit(platform_instance or env.upper()).alias("instance"),
         F.lit(platform).alias("platform"),
         schema.alias("schema"),
     ))
     return F.concat(F.lit("urn:li:container:"), F.md5(guid_json))
+
+
+def data_platform_instance_aspect(platform: str, platform_instance: str | None = None) -> Any:
+    platform_urn = F.lit(f"urn:li:dataPlatform:{platform}")
+    if platform_instance:
+        return F.struct(
+            platform_urn.alias("platform"),
+            F.lit(f"urn:li:dataPlatformInstance:(urn:li:dataPlatform:{platform},{platform_instance})").alias("instance"),
+        )
+    return F.struct(platform_urn.alias("platform"))
 
 
 def schema_type(native_type: Any) -> Any:
@@ -158,6 +175,7 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--env", default="PROD")
     parser.add_argument("--platform", default="hive")
+    parser.add_argument("--platform-instance")
     parser.add_argument("--database-pattern", default=".*")
     parser.add_argument("--metastore-name", default="hive_metastore")
     parser.add_argument("--source-timezone", default="UTC")
@@ -194,9 +212,9 @@ def main() -> None:
         tbls.join(F.broadcast(dbs), "DB_ID", "inner")
         .join(sds, "SD_ID", "left")
         .withColumn("DATASET_NAME", F.concat_ws(".", F.col("NAME"), F.col("TBL_NAME")))
-        .withColumn("URN", dataset_urn(args.platform, F.col("DATASET_NAME"), args.env))
+        .withColumn("URN", dataset_urn(args.platform, F.col("DATASET_NAME"), args.env, args.platform_instance))
         .withColumn("CONTAINER_URN", schema_container_urn(
-            args.platform, F.lit(args.metastore_name), F.col("NAME"), args.env
+            args.platform, F.lit(args.metastore_name), F.col("NAME"), args.env, args.platform_instance
         ))
     )
     if base.filter(F.col("DATASET_NAME").rlike(r"[(),]")).limit(1).count():
@@ -260,51 +278,77 @@ def main() -> None:
     )
     enriched = enriched.join(partition_names, "TBL_ID", "left")
 
-    schema_urn = schema_container_urn(args.platform, F.lit(args.metastore_name), F.col("NAME"), args.env)
-    root_urn = container_urn(args.platform, F.lit(args.metastore_name), args.env)
-    platform_urn = F.lit(f"urn:li:dataPlatform:{args.platform}")
+    schema_urn = schema_container_urn(
+        args.platform, F.lit(args.metastore_name), F.col("NAME"), args.env, args.platform_instance
+    )
+    root_urn = container_urn(args.platform, F.lit(args.metastore_name), args.env, args.platform_instance)
+    root_custom_properties = [
+        F.lit("platform"), F.lit(args.platform),
+        F.lit("env"), F.lit(args.env.upper()),
+        F.lit("database"), F.lit(args.metastore_name),
+    ]
+    schema_custom_properties = [
+        F.lit("platform"), F.lit(args.platform),
+        F.lit("env"), F.lit(args.env.upper()),
+        F.lit("database"), F.lit(args.metastore_name),
+        F.lit("schema"), F.col("NAME"),
+    ]
+    if args.platform_instance:
+        root_custom_properties[2:2] = [F.lit("instance"), F.lit(args.platform_instance)]
+        schema_custom_properties[2:2] = [F.lit("instance"), F.lit(args.platform_instance)]
+    root_browse_path_items = []
+    schema_browse_path_items = [F.struct(root_urn.alias("id"), root_urn.alias("urn"))]
+    dataset_browse_path_items = [
+        F.struct(root_urn.alias("id"), root_urn.alias("urn")),
+        F.struct(F.col("CONTAINER_URN").alias("id"), F.col("CONTAINER_URN").alias("urn")),
+    ]
+    if args.platform_instance:
+        data_platform_instance_urn = F.lit(
+            f"urn:li:dataPlatformInstance:(urn:li:dataPlatform:{args.platform},{args.platform_instance})"
+        )
+        data_platform_instance_path = F.struct(
+            data_platform_instance_urn.alias("id"),
+            data_platform_instance_urn.alias("urn"),
+        )
+        root_browse_path_items.append(data_platform_instance_path)
+        schema_browse_path_items.insert(0, data_platform_instance_path)
+        dataset_browse_path_items.insert(0, data_platform_instance_path)
     root_events = spark.range(1).select(
         F.explode(F.array(
             mcp("container", root_urn, "containerProperties", F.struct(
-                F.create_map(
-                    F.lit("platform"), F.lit(args.platform),
-                    F.lit("env"), F.lit(args.env.upper()),
-                    F.lit("database"), F.lit(args.metastore_name),
-                ).alias("customProperties"),
+                F.create_map(*root_custom_properties).alias("customProperties"),
                 F.lit(args.metastore_name).alias("name"),
                 F.lit(args.env.upper()).alias("env"),
             )),
             mcp("container", root_urn, "status", F.struct(F.lit(False).alias("removed"))),
             mcp("container", root_urn, "subTypes", F.struct(F.array(F.lit("Database")).alias("typeNames"))),
-            mcp("container", root_urn, "dataPlatformInstance", F.struct(platform_urn.alias("platform"))),
-            mcp("container", root_urn, "browsePathsV2", F.struct(F.array().alias("path"))),
+            mcp("container", root_urn, "dataPlatformInstance", data_platform_instance_aspect(
+                args.platform, args.platform_instance
+            )),
+            mcp("container", root_urn, "browsePathsV2", F.struct(F.array(*root_browse_path_items).alias("path"))),
         )).alias("mcp")
     ).select("mcp.*")
     schema_events = dbs.select(
         F.explode(F.array(
             mcp("container", schema_urn, "container", F.struct(root_urn.alias("container"))),
             mcp("container", schema_urn, "containerProperties", F.struct(
-                F.create_map(
-                    F.lit("platform"), F.lit(args.platform),
-                    F.lit("env"), F.lit(args.env.upper()),
-                    F.lit("database"), F.lit(args.metastore_name),
-                    F.lit("schema"), F.col("NAME"),
-                ).alias("customProperties"),
+                F.create_map(*schema_custom_properties).alias("customProperties"),
                 F.col("NAME").alias("name"),
                 F.lit(args.env.upper()).alias("env"),
             )),
             mcp("container", schema_urn, "status", F.struct(F.lit(False).alias("removed"))),
             mcp("container", schema_urn, "subTypes", F.struct(F.array(F.lit("Schema")).alias("typeNames"))),
-            mcp("container", schema_urn, "dataPlatformInstance", F.struct(platform_urn.alias("platform"))),
+            mcp("container", schema_urn, "dataPlatformInstance", data_platform_instance_aspect(
+                args.platform, args.platform_instance
+            )),
             mcp("container", schema_urn, "browsePathsV2", F.struct(
-                F.array(F.struct(root_urn.alias("id"), root_urn.alias("urn"))).alias("path")
+                F.array(*schema_browse_path_items).alias("path")
             )),
         )).alias("mcp")
     ).select("mcp.*")
 
-    dataset_events = enriched.select(
-        F.explode(F.array(
-            mcp("dataset", F.col("URN"), "datasetProperties", F.struct(
+    dataset_event_items = [
+        mcp("dataset", F.col("URN"), "datasetProperties", F.struct(
                 F.col("TBL_NAME").alias("name"),
                 F.when(
                     ~F.col("TBL_TYPE").isin("VIRTUAL_VIEW", "MATERIALIZED_VIEW"),
@@ -325,7 +369,7 @@ def main() -> None:
                 ).alias("customProperties"),
                 F.array().alias("tags"),
             )),
-            mcp("dataset", F.col("URN"), "schemaMetadata", F.struct(
+        mcp("dataset", F.col("URN"), "schemaMetadata", F.struct(
                 F.col("DATASET_NAME").alias("schemaName"),
                 F.lit(f"urn:li:dataPlatform:{args.platform}").alias("platform"),
                 F.lit(0).cast("long").alias("version"),
@@ -344,21 +388,24 @@ def main() -> None:
                 ).alias("platformSchema"),
                 F.coalesce("FIELDS", F.array()).alias("fields"),
             )),
-            mcp("dataset", F.col("URN"), "status", F.struct(F.lit(False).alias("removed"))),
-            mcp("dataset", F.col("URN"), "container", F.struct(F.col("CONTAINER_URN").alias("container"))),
-            mcp("dataset", F.col("URN"), "browsePathsV2", F.struct(
-                F.array(
-                    F.struct(root_urn.alias("id"), root_urn.alias("urn")),
-                    F.struct(F.col("CONTAINER_URN").alias("id"), F.col("CONTAINER_URN").alias("urn")),
-                ).alias("path")
+        mcp("dataset", F.col("URN"), "status", F.struct(F.lit(False).alias("removed"))),
+        mcp("dataset", F.col("URN"), "container", F.struct(F.col("CONTAINER_URN").alias("container"))),
+        mcp("dataset", F.col("URN"), "browsePathsV2", F.struct(
+                F.array(*dataset_browse_path_items).alias("path")
             )),
-            mcp("dataset", F.col("URN"), "subTypes", F.struct(
+        mcp("dataset", F.col("URN"), "subTypes", F.struct(
                 F.array(
                     F.when(F.col("TBL_TYPE").isin("VIRTUAL_VIEW", "MATERIALIZED_VIEW"), F.lit("View"))
                     .otherwise(F.lit("Table"))
                 ).alias("typeNames"),
             )),
-        )).alias("mcp")
+    ]
+    if args.platform_instance:
+        dataset_event_items.append(mcp("dataset", F.col("URN"), "dataPlatformInstance", data_platform_instance_aspect(
+                args.platform, args.platform_instance
+            )))
+    dataset_events = enriched.select(
+        F.explode(F.array(*dataset_event_items)).alias("mcp")
     ).select("mcp.*")
 
     view_events = enriched.filter(F.col("TBL_TYPE").isin("VIRTUAL_VIEW", "MATERIALIZED_VIEW")).select(

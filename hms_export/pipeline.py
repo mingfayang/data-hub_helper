@@ -86,6 +86,7 @@ def spark_submit_transform(
     job_file: Path = Path("jobs/transform_hms.py"),
     env: str = "PROD",
     platform: str = "hive",
+    platform_instance: Optional[str] = None,
     database_pattern: str = ".*",
     metastore_name: str = "hive_metastore",
     source_timezone: str = "UTC",
@@ -135,6 +136,8 @@ def spark_submit_transform(
         env,
         "--platform",
         platform,
+        "--platform-instance",
+        platform_instance or platform,
         "--database-pattern",
         database_pattern,
         "--metastore-name",
@@ -182,10 +185,11 @@ def validate_pipeline_config(config: Mapping[str, Any]) -> None:
         raise ValueError("spark.args must be a list")
     if spark.get("conf") is not None and not isinstance(spark["conf"], list):
         raise ValueError("spark.conf must be a list")
-    if not str(spark.get("metastore_name", "hive_metastore")).strip():
-        raise ValueError("spark.metastore_name must not be empty")
-    if "/" in str(spark.get("metastore_name", "hive_metastore")):
-        raise ValueError("spark.metastore_name must not contain '/'")
+    metastore_name = str(mysql.get("database", "")).strip()
+    if not metastore_name:
+        raise ValueError("mysql.database must not be empty")
+    if "/" in metastore_name:
+        raise ValueError("mysql.database must not contain '/'")
     for key in ("driver_cores", "executor_cores", "num_executors"):
         if spark.get(key) is not None and int(spark[key]) <= 0:
             raise ValueError(f"spark.{key} must be positive")
@@ -237,7 +241,7 @@ def run_pipeline(
         delete_local_snapshot(local_snapshot)
     else:
         hdfs_snapshot = str(local_snapshot)
-    metastore_name = str(spark.get("metastore_name", "hive_metastore"))
+    metastore_name = str(_section(config, "mysql")["database"])
     spark_output = join_hdfs_path(str(hdfs_output), metastore_name)
     if bool(spark.get("overwrite_output", False)):
         if hdfs_enabled:
@@ -251,6 +255,7 @@ def run_pipeline(
         job_file=Path(spark.get("job_file", "jobs/transform_hms.py")),
         env=str(spark.get("env", "PROD")),
         platform=str(spark.get("platform", "hive")),
+        platform_instance=str(spark.get("platform_instance", spark.get("platform", "hive"))),
         database_pattern=str(spark.get("database_pattern", ".*")),
         metastore_name=metastore_name,
         source_timezone=str(spark.get("source_timezone", "UTC")),

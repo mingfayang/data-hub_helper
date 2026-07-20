@@ -1,8 +1,8 @@
 {
   "equal": true,
   "summary": {
-    "baseline_aspects": 630,
-    "candidate_aspects": 630,
+    "baseline_aspects": 746,
+    "candidate_aspects": 746,
     "missing_in_candidate": 0,
     "extra_in_candidate": 0,
     "different_aspects": 0

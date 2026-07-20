@@ -11,7 +11,7 @@ OUTPUT_ROOT="$ROOT/tests/output/local-comparison"
 BASELINE_OUTPUT="$OUTPUT_ROOT/baseline-datahub.json"
 SNAPSHOT_ROOT="$OUTPUT_ROOT/snapshots"
 SPARK_OUTPUT_ROOT="$OUTPUT_ROOT/spark-datahub-mcp"
-SPARK_OUTPUT="$SPARK_OUTPUT_ROOT/local-integration"
+SPARK_OUTPUT="$SPARK_OUTPUT_ROOT/hive_metastore_test"
 COMPARE_REPORT="$OUTPUT_ROOT/compare-report.json"
 
 if [[ ! -x "$VENV/bin/datahub" ]] || ! "$VENV/bin/python" -c "import cryptography, importlib.metadata as m; assert m.version('acryl-datahub') == '1.6.0'" 2>/dev/null; then
@@ -42,8 +42,7 @@ python scripts/run_hms_pipeline.py \
   --spark-arg 'local[2]' \
   --env UAT \
   --platform hive \
-  --database-pattern '^hive$' \
-  --metastore-name hive_metastore_test \
+  --platform-instance hive \
   --source-timezone Asia/Shanghai \
   --max-file-size 2k
 python scripts/compare_datahub_output.py \
@@ -56,9 +55,9 @@ python - <<'PY'
 from pathlib import Path
 from hms_export.compare import load_records
 
-candidate = Path("tests/output/local-comparison/spark-datahub-mcp/local-integration")
+candidate = Path("tests/output/local-comparison/spark-datahub-mcp/hive_metastore_test")
 records = load_records(candidate)
-target = "urn:li:dataset:(urn:li:dataPlatform:hive,hive.test_table_042,UAT)"
+target = "urn:li:dataset:(urn:li:dataPlatform:hive,hive.hive.test_table_042,UAT)"
 by_key = {(record.urn, record.aspect_name): record.aspect for record in records}
 properties = by_key[(target, "datasetProperties")]
 schema = by_key[(target, "schemaMetadata")]

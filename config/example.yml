@@ -36,8 +36,8 @@ spark:
   overwrite_output: false
   env: "UAT"
   platform: "hive"
-  database_pattern: "^hive$"
-  metastore_name: "hive_metastore"
+  platform_instance: "hive"
+  database_pattern: ".*"
   source_timezone: "UTC"
   single_file: false
   max_file_size: "20M"
