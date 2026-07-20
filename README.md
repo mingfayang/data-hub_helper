@@ -97,6 +97,7 @@ python scripts/run_hms_pipeline.py \
   --hdfs-bin hdfs \
   --hdfs-snapshot-dir hdfs:///warehouse/hms-snapshots \
   --hdfs-output hdfs:///warehouse/datahub-mcp \
+  --overwrite-hdfs \
   --spark-submit spark-submit \
   --spark-job-file jobs/transform_hms.py \
   --spark-master yarn \
@@ -118,7 +119,9 @@ python scripts/run_hms_pipeline.py \
   --spark-arg=--verbose
 ```
 
-若需要重跑同一个 `snapshot-id`，增加 `--overwrite-hdfs` 会先删除已有 HDFS 快照目录。Spark 输出目录仍使用 Spark 的 `errorifexists` 模式，避免误覆盖结果。`--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
+若需要重跑同一个 `snapshot-id`，增加 `--overwrite-hdfs` 会先删除已有 HDFS 快照目录，再重新上传本地 snapshot。注意：`--overwrite-hdfs` 只影响 HDFS snapshot 目录，不覆盖 Spark 最终 JSON 输出目录。Spark 输出目录仍使用 Spark 的 `errorifexists` 模式；如果 `hdfs.output_dir/snapshot-id` 已存在，作业会失败退出，避免误覆盖结果。
+
+`--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
 
 常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name` 和多条 `conf`。`--spark-arg` 仍可用于补充不常用的 `spark-submit` 参数，例如 `--archives`、`--jars`。
 
