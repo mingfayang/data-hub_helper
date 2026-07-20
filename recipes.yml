@@ -1,0 +1,24 @@
+source:
+  type: hive-metastore
+  config:
+    connection_type: sql
+    host_port: "127.0.0.1:3306"
+    metastore_db_name: "hive_metastore_test"
+    database: "hive"
+    database_pattern:
+      allow:
+        - "^hive$"
+    username: "hive_test"
+    password: "hive_test_password"
+    scheme: "mysql+pymysql"
+    env: "UAT"
+    use_catalog_subtype: false
+    use_dataset_pascalcase_subtype: true
+    include_view_lineage: false
+    include_table_location_lineage: false
+    enable_properties_merge: false
+
+sink:
+  type: file
+  config:
+    filename: "tests/output/local-comparison/baseline-datahub.json"

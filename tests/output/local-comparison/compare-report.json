@@ -1,0 +1,17 @@
+{
+  "equal": true,
+  "summary": {
+    "baseline_aspects": 630,
+    "candidate_aspects": 630,
+    "missing_in_candidate": 0,
+    "extra_in_candidate": 0,
+    "different_aspects": 0
+  },
+  "missing_in_candidate": [],
+  "extra_in_candidate": [],
+  "differences": [],
+  "duplicates": {
+    "baseline": [],
+    "candidate": []
+  }
+}

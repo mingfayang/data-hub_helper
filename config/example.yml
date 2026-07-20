@@ -1,0 +1,36 @@
+mysql:
+  host: "mysql-uat.example.com"
+  port: 3306
+  database: "hive"
+  username: "hive_reader"
+  password_env: "HMS_MYSQL_PASSWORD"
+  connect_timeout_seconds: 30
+  read_timeout_seconds: 3600
+  consistent_snapshot: true
+
+snapshot:
+  output_dir: "data"
+  rows_per_file: 200000
+  fetch_size: 5000
+  # 表清单由程序内置为 DataHub Hive Metastore connector 所需系统表。
+
+hdfs:
+  enabled: true
+  bin: "hdfs"
+  snapshot_dir: "hdfs:///tmp/hms-snapshots"
+  output_dir: "hdfs:///tmp/datahub-mcp"
+  overwrite: false
+
+spark:
+  submit: "spark-submit"
+  job_file: "jobs/transform_hms.py"
+  env: "UAT"
+  platform: "hive"
+  database_pattern: "^hive$"
+  metastore_name: "hive_metastore"
+  source_timezone: "UTC"
+  single_file: false
+  max_file_size: "20M"
+  # args:
+  #   - "--master"
+  #   - "yarn"

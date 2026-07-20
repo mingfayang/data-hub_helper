@@ -1,0 +1,55 @@
+{
+  "snapshot_id": "local-integration",
+  "started_at": "2026-07-20T04:22:03.354461+00:00",
+  "database": "hive_metastore_test",
+  "consistent_snapshot": true,
+  "tables": [
+    {
+      "table": "DBS",
+      "rows": 2,
+      "files": 1
+    },
+    {
+      "table": "DATABASE_PARAMS",
+      "rows": 0,
+      "files": 1
+    },
+    {
+      "table": "TBLS",
+      "rows": 104,
+      "files": 52
+    },
+    {
+      "table": "TABLE_PARAMS",
+      "rows": 204,
+      "files": 102
+    },
+    {
+      "table": "SDS",
+      "rows": 104,
+      "files": 52
+    },
+    {
+      "table": "SERDES",
+      "rows": 104,
+      "files": 52
+    },
+    {
+      "table": "SERDE_PARAMS",
+      "rows": 104,
+      "files": 52
+    },
+    {
+      "table": "COLUMNS_V2",
+      "rows": 207,
+      "files": 104
+    },
+    {
+      "table": "PARTITION_KEYS",
+      "rows": 1,
+      "files": 1
+    }
+  ],
+  "complete": true,
+  "completed_at": "2026-07-20T04:22:03.488614+00:00"
+}

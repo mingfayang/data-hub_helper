@@ -1,0 +1,14 @@
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  database: "hive_metastore_test"
+  username: "hive_test"
+  password_env: "HMS_MYSQL_PASSWORD"
+  connect_timeout_seconds: 30
+  read_timeout_seconds: 300
+  consistent_snapshot: true
+
+snapshot:
+  output_dir: "data"
+  rows_per_file: 2
+  fetch_size: 2
