@@ -77,8 +77,8 @@ python scripts/run_hms_pipeline.py \
 1. 读取 MySQL HMS 表，并在 `snapshot.output_dir/snapshot-id` 保存 gzip JSONL 快照；
 2. 用 `hdfs dfs -put` 上传快照目录到 `hdfs.snapshot_dir/snapshot-id`；
 3. 上传成功后删除本地 snapshot 目录；
-4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到 `hdfs.output_dir/snapshot-id`；
-5. Spark 成功生成 JSONL 输出后执行 `hdfs dfs -chmod -R 777 hdfs.output_dir/snapshot-id`；
+4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到固定目录 `hdfs.output_dir/metastore_name`；
+5. Spark 成功生成 JSONL 输出后执行 `hdfs dfs -chmod -R 777 hdfs.output_dir/metastore_name`；
 6. 删除 HDFS snapshot 目录。
 
 生产常用参数可以在命令行覆盖：
@@ -120,14 +120,21 @@ python scripts/run_hms_pipeline.py \
   --spark-arg=--verbose
 ```
 
-输出目录按 `hdfs.output_dir/snapshot-id` 命名。例如 `--hdfs-output hdfs:///warehouse/datahub-mcp --snapshot-id snapshot-20260624T090000Z` 会输出到 `hdfs:///warehouse/datahub-mcp/snapshot-20260624T090000Z`。如果不传 `--snapshot-id`，程序会自动生成 UTC 秒级名称，如 `snapshot-20260720T042201Z`。
+HDFS 上会使用两个目录：
+
+- `hdfs.snapshot_dir/snapshot-id`：临时 snapshot 目录，Spark 成功后会自动删除。
+- `hdfs.output_dir/metastore_name`：固定 Spark 最终 JSON 输出目录。
+
+例如 `--hdfs-output hdfs:///warehouse/datahub-mcp --metastore-name hive_metastore` 会始终输出到 `hdfs:///warehouse/datahub-mcp/hive_metastore`。`snapshot-id` 不参与最终输出目录命名，因此 HDFS 上最终只保留这一份 Spark JSON 输出目录。
+
+`snapshot-id` 只用于临时 snapshot 目录命名：本地目录为 `snapshot.output_dir/snapshot-id`，HDFS 临时目录为 `hdfs.snapshot_dir/snapshot-id`。如果不传 `--snapshot-id`，程序会自动生成 UTC 秒级名称，如 `snapshot-20260720T042201Z`。
 
 若需要重跑同一个 `snapshot-id`，可以分别控制 snapshot 和 Spark 输出是否覆盖：
 
 - `--overwrite-hdfs`：只影响 HDFS snapshot 目录。它会先删除已有 `hdfs.snapshot_dir/snapshot-id`，再重新上传本地 snapshot。
-- `--overwrite-spark-output`：只影响 Spark 最终 JSON 输出目录。它会在提交 Spark 前删除已有 `hdfs.output_dir/snapshot-id`，然后让 Spark 重新生成 JSON。
+- `--overwrite-spark-output`：只影响 Spark 最终 JSON 输出目录。它会在提交 Spark 前删除已有 `hdfs.output_dir/metastore_name`，然后让 Spark 重新生成 JSON。
 
-如果不配置 `--overwrite-spark-output`，程序不会删除已有 Spark 输出目录；当 `hdfs.output_dir/snapshot-id` 已存在时，Spark 会按 `errorifexists` 行为报错退出，避免误覆盖结果。
+如果不配置 `--overwrite-spark-output`，程序不会删除已有 Spark 输出目录；当 `hdfs.output_dir/metastore_name` 已存在时，Spark 会按 `errorifexists` 行为报错退出，避免误覆盖结果。
 
 `--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
 

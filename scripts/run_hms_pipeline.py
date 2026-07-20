@@ -79,7 +79,7 @@ def main() -> None:
         "--overwrite-spark-output",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="delete hdfs.output_dir/snapshot-id before spark-submit; default keeps Spark errorifexists behavior",
+        help="delete hdfs.output_dir/metastore_name before spark-submit; default keeps Spark errorifexists behavior",
     )
     parser.add_argument(
         "--spark-conf",

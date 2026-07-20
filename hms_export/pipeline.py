@@ -182,6 +182,10 @@ def validate_pipeline_config(config: Mapping[str, Any]) -> None:
         raise ValueError("spark.args must be a list")
     if spark.get("conf") is not None and not isinstance(spark["conf"], list):
         raise ValueError("spark.conf must be a list")
+    if not str(spark.get("metastore_name", "hive_metastore")).strip():
+        raise ValueError("spark.metastore_name must not be empty")
+    if "/" in str(spark.get("metastore_name", "hive_metastore")):
+        raise ValueError("spark.metastore_name must not contain '/'")
     for key in ("driver_cores", "executor_cores", "num_executors"):
         if spark.get(key) is not None and int(spark[key]) <= 0:
             raise ValueError(f"spark.{key} must be positive")
@@ -233,7 +237,8 @@ def run_pipeline(
         delete_local_snapshot(local_snapshot)
     else:
         hdfs_snapshot = str(local_snapshot)
-    spark_output = join_hdfs_path(hdfs_output, local_snapshot.name)
+    metastore_name = str(spark.get("metastore_name", "hive_metastore"))
+    spark_output = join_hdfs_path(str(hdfs_output), metastore_name)
     if bool(spark.get("overwrite_output", False)):
         if hdfs_enabled:
             delete_hdfs_output(spark_output, hdfs_bin, runner)
@@ -247,7 +252,7 @@ def run_pipeline(
         env=str(spark.get("env", "PROD")),
         platform=str(spark.get("platform", "hive")),
         database_pattern=str(spark.get("database_pattern", ".*")),
-        metastore_name=str(spark.get("metastore_name", "hive_metastore")),
+        metastore_name=metastore_name,
         source_timezone=str(spark.get("source_timezone", "UTC")),
         single_file=bool(spark.get("single_file", False)),
         max_file_size=str(spark["max_file_size"]) if spark.get("max_file_size") is not None else None,
