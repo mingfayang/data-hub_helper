@@ -6,7 +6,9 @@ import pytest
 
 from hms_export.pipeline import (
     chmod_hdfs_output,
+    delete_hdfs_output,
     delete_hdfs_snapshot,
+    delete_local_output,
     delete_local_snapshot,
     join_hdfs_path,
     run_pipeline,
@@ -70,6 +72,20 @@ def test_delete_hdfs_snapshot_builds_hdfs_rm_command() -> None:
     runner = RecordingRunner()
     delete_hdfs_snapshot("hdfs:///tmp/snapshots/snapshot-1", hdfs_bin="hdfs", runner=runner)
     assert runner.commands == [["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///tmp/snapshots/snapshot-1"]]
+
+
+def test_delete_local_output_removes_output_directory(tmp_path: Path) -> None:
+    output = tmp_path / "output-1"
+    output.mkdir()
+    (output / "part-00000").write_text("{}\n")
+    delete_local_output(str(output))
+    assert not output.exists()
+
+
+def test_delete_hdfs_output_builds_hdfs_rm_command() -> None:
+    runner = RecordingRunner()
+    delete_hdfs_output("hdfs:///tmp/output/snapshot-1", hdfs_bin="hdfs", runner=runner)
+    assert runner.commands == [["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///tmp/output/snapshot-1"]]
 
 
 def test_chmod_hdfs_output_builds_hdfs_chmod_command() -> None:
@@ -228,6 +244,18 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
     assert runner.commands[4] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
 
 
+def test_run_pipeline_can_overwrite_spark_output(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    local_snapshot = tmp_path / "snapshot-1"
+    local_snapshot.mkdir()
+    config = minimal_config(tmp_path)
+    config["spark"] = {"env": "UAT", "overwrite_output": True}
+    with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot):
+        run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
+    assert runner.commands[2] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///outputs/snapshot-1"]
+    assert runner.commands[3][0] == "spark-submit"
+
+
 def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:
     runner = RecordingRunner()
     local_snapshot = tmp_path / "snapshot-1"
@@ -240,4 +268,20 @@ def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:
     assert result.hdfs_snapshot == str(local_snapshot)
     assert result.hdfs_output == str(tmp_path / "outputs" / "snapshot-1")
     assert local_snapshot.exists()
+    assert runner.commands[0][0] == "spark-submit"
+
+
+def test_run_pipeline_can_overwrite_local_spark_output_when_hdfs_is_disabled(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    local_snapshot = tmp_path / "snapshot-1"
+    local_snapshot.mkdir()
+    output = tmp_path / "outputs" / "snapshot-1"
+    output.mkdir(parents=True)
+    (output / "part-00000").write_text("{}\n")
+    config = minimal_config(tmp_path)
+    config["hdfs"] = {"enabled": False, "output_dir": str(tmp_path / "outputs")}
+    config["spark"] = {"env": "UAT", "overwrite_output": True}
+    with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot):
+        run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
+    assert not output.exists()
     assert runner.commands[0][0] == "spark-submit"

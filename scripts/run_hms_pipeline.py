@@ -76,6 +76,12 @@ def main() -> None:
     parser.add_argument("--spark-num-executors", type=int, help="number of executors")
     parser.add_argument("--spark-app-name", help="Spark application name")
     parser.add_argument(
+        "--overwrite-spark-output",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="delete hdfs.output_dir/snapshot-id before spark-submit; default keeps Spark errorifexists behavior",
+    )
+    parser.add_argument(
         "--spark-conf",
         action="append",
         default=[],
@@ -141,6 +147,7 @@ def main() -> None:
     set_if_present(spark, "executor_cores", args.spark_executor_cores)
     set_if_present(spark, "num_executors", args.spark_num_executors)
     set_if_present(spark, "app_name", args.spark_app_name)
+    set_if_present(spark, "overwrite_output", args.overwrite_spark_output)
     if args.spark_conf:
         spark["conf"] = args.spark_conf
     set_if_present(spark, "env", args.env)

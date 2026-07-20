@@ -109,6 +109,7 @@ python scripts/run_hms_pipeline.py \
   --spark-executor-cores 2 \
   --spark-num-executors 4 \
   --spark-app-name hms-snapshot-to-datahub \
+  --overwrite-spark-output \
   --spark-conf spark.sql.shuffle.partitions=200 \
   --env UAT \
   --platform hive \
@@ -119,7 +120,14 @@ python scripts/run_hms_pipeline.py \
   --spark-arg=--verbose
 ```
 
-若需要重跑同一个 `snapshot-id`，增加 `--overwrite-hdfs` 会先删除已有 HDFS 快照目录，再重新上传本地 snapshot。注意：`--overwrite-hdfs` 只影响 HDFS snapshot 目录，不覆盖 Spark 最终 JSON 输出目录。Spark 输出目录仍使用 Spark 的 `errorifexists` 模式；如果 `hdfs.output_dir/snapshot-id` 已存在，作业会失败退出，避免误覆盖结果。
+输出目录按 `hdfs.output_dir/snapshot-id` 命名。例如 `--hdfs-output hdfs:///warehouse/datahub-mcp --snapshot-id snapshot-20260624T090000Z` 会输出到 `hdfs:///warehouse/datahub-mcp/snapshot-20260624T090000Z`。如果不传 `--snapshot-id`，程序会自动生成 UTC 秒级名称，如 `snapshot-20260720T042201Z`。
+
+若需要重跑同一个 `snapshot-id`，可以分别控制 snapshot 和 Spark 输出是否覆盖：
+
+- `--overwrite-hdfs`：只影响 HDFS snapshot 目录。它会先删除已有 `hdfs.snapshot_dir/snapshot-id`，再重新上传本地 snapshot。
+- `--overwrite-spark-output`：只影响 Spark 最终 JSON 输出目录。它会在提交 Spark 前删除已有 `hdfs.output_dir/snapshot-id`，然后让 Spark 重新生成 JSON。
+
+如果不配置 `--overwrite-spark-output`，程序不会删除已有 Spark 输出目录；当 `hdfs.output_dir/snapshot-id` 已存在时，Spark 会按 `errorifexists` 行为报错退出，避免误覆盖结果。
 
 `--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
 

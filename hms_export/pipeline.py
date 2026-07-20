@@ -56,6 +56,20 @@ def delete_hdfs_snapshot(
     runner([hdfs_bin, "dfs", "-rm", "-r", "-f", hdfs_snapshot])
 
 
+def delete_local_output(local_output: str) -> None:
+    path = Path(local_output)
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def delete_hdfs_output(
+    hdfs_output: str,
+    hdfs_bin: str = "hdfs",
+    runner: CommandRunner = default_runner,
+) -> None:
+    runner([hdfs_bin, "dfs", "-rm", "-r", "-f", hdfs_output])
+
+
 def chmod_hdfs_output(
     hdfs_output: str,
     hdfs_bin: str = "hdfs",
@@ -220,6 +234,11 @@ def run_pipeline(
     else:
         hdfs_snapshot = str(local_snapshot)
     spark_output = join_hdfs_path(hdfs_output, local_snapshot.name)
+    if bool(spark.get("overwrite_output", False)):
+        if hdfs_enabled:
+            delete_hdfs_output(spark_output, hdfs_bin, runner)
+        else:
+            delete_local_output(spark_output)
     spark_submit_transform(
         hdfs_snapshot,
         spark_output,
