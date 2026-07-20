@@ -5,6 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from hms_export.pipeline import (
+    delete_hdfs_snapshot,
+    delete_local_snapshot,
     join_hdfs_path,
     run_pipeline,
     spark_submit_transform,
@@ -55,6 +57,20 @@ def test_upload_snapshot_to_hdfs_builds_hdfs_commands(tmp_path: Path) -> None:
     ]
 
 
+def test_delete_local_snapshot_removes_snapshot_directory(tmp_path: Path) -> None:
+    local_snapshot = tmp_path / "snapshot-1"
+    local_snapshot.mkdir()
+    (local_snapshot / "manifest.json").write_text("{}\n")
+    delete_local_snapshot(local_snapshot)
+    assert not local_snapshot.exists()
+
+
+def test_delete_hdfs_snapshot_builds_hdfs_rm_command() -> None:
+    runner = RecordingRunner()
+    delete_hdfs_snapshot("hdfs:///tmp/snapshots/snapshot-1", hdfs_bin="hdfs", runner=runner)
+    assert runner.commands == [["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///tmp/snapshots/snapshot-1"]]
+
+
 def test_spark_submit_transform_builds_command() -> None:
     runner = RecordingRunner()
     spark_submit_transform(
@@ -69,13 +85,42 @@ def test_spark_submit_transform_builds_command() -> None:
         source_timezone="Asia/Shanghai",
         single_file=True,
         max_file_size=None,
-        spark_args=["--master", "yarn"],
+        master="yarn",
+        deploy_mode="cluster",
+        queue="root.datahub",
+        driver_memory="2g",
+        driver_cores=1,
+        executor_memory="4g",
+        executor_cores=2,
+        num_executors=8,
+        app_name="hms-export-test",
+        spark_conf=["spark.sql.shuffle.partitions=16"],
+        spark_args=["--verbose"],
         runner=runner,
     )
     assert runner.commands == [[
         "spark-submit",
         "--master",
         "yarn",
+        "--deploy-mode",
+        "cluster",
+        "--queue",
+        "root.datahub",
+        "--driver-memory",
+        "2g",
+        "--driver-cores",
+        "1",
+        "--executor-memory",
+        "4g",
+        "--executor-cores",
+        "2",
+        "--num-executors",
+        "8",
+        "--name",
+        "hms-export-test",
+        "--conf",
+        "spark.sql.shuffle.partitions=16",
+        "--verbose",
         "jobs/transform_hms.py",
         "--snapshot",
         "hdfs:///tmp/snapshots/snapshot-1",
@@ -128,12 +173,27 @@ def test_validate_pipeline_config_rejects_single_file_with_max_file_size(tmp_pat
         validate_pipeline_config(config)
 
 
+def test_validate_pipeline_config_rejects_invalid_spark_resource_counts(tmp_path: Path) -> None:
+    config = minimal_config(tmp_path)
+    config["spark"]["num_executors"] = 0
+    with pytest.raises(ValueError, match="num_executors"):
+        validate_pipeline_config(config)
+
+
 def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> None:
     runner = RecordingRunner()
     local_snapshot = tmp_path / "snapshot-1"
     local_snapshot.mkdir()
     config = minimal_config(tmp_path)
-    config["spark"] = {"env": "UAT", "args": ["--master", "local[2]"], "max_file_size": "20k"}
+    config["spark"] = {
+        "env": "UAT",
+        "master": "yarn",
+        "queue": "root.datahub",
+        "driver_memory": "2g",
+        "executor_memory": "4g",
+        "args": ["--verbose"],
+        "max_file_size": "20k",
+    }
     with patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot) as create_snapshot:
         result = run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
     assert create_snapshot.call_args.args[0]["snapshot"]["tables"] == list(DEFAULT_HMS_TABLES)
@@ -142,8 +202,22 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
     assert result.hdfs_output == "hdfs:///outputs/snapshot-1"
     assert runner.commands[0] == ["hdfs", "dfs", "-mkdir", "-p", "hdfs:///snapshots"]
     assert runner.commands[1] == ["hdfs", "dfs", "-put", str(local_snapshot), "hdfs:///snapshots"]
-    assert runner.commands[2][:4] == ["spark-submit", "--master", "local[2]", "jobs/transform_hms.py"]
+    assert not local_snapshot.exists()
+    assert runner.commands[2][:11] == [
+        "spark-submit",
+        "--master",
+        "yarn",
+        "--queue",
+        "root.datahub",
+        "--driver-memory",
+        "2g",
+        "--executor-memory",
+        "4g",
+        "--verbose",
+        "jobs/transform_hms.py",
+    ]
     assert runner.commands[2][-2:] == ["--max-file-size", "20k"]
+    assert runner.commands[3] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
 
 
 def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:
@@ -157,4 +231,5 @@ def test_run_pipeline_can_skip_hdfs(tmp_path: Path) -> None:
         result = run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
     assert result.hdfs_snapshot == str(local_snapshot)
     assert result.hdfs_output == str(tmp_path / "outputs" / "snapshot-1")
+    assert local_snapshot.exists()
     assert runner.commands[0][0] == "spark-submit"

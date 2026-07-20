@@ -66,6 +66,21 @@ def main() -> None:
 
     parser.add_argument("--spark-submit", help="spark-submit executable")
     parser.add_argument("--spark-job-file", type=Path, help="Spark job script path")
+    parser.add_argument("--spark-master", help="Spark master, for example yarn or local[2]")
+    parser.add_argument("--spark-deploy-mode", choices=["client", "cluster"], help="Spark deploy mode")
+    parser.add_argument("--spark-queue", help="YARN resource queue")
+    parser.add_argument("--spark-driver-memory", help="driver memory, for example 2g")
+    parser.add_argument("--spark-driver-cores", type=int, help="driver cores")
+    parser.add_argument("--spark-executor-memory", help="executor memory, for example 4g")
+    parser.add_argument("--spark-executor-cores", type=int, help="executor cores")
+    parser.add_argument("--spark-num-executors", type=int, help="number of executors")
+    parser.add_argument("--spark-app-name", help="Spark application name")
+    parser.add_argument(
+        "--spark-conf",
+        action="append",
+        default=[],
+        help="spark-submit --conf value, for example spark.sql.shuffle.partitions=200; repeat for multiple values",
+    )
     parser.add_argument("--env", help="DataHub env, for example UAT or PROD")
     parser.add_argument("--platform", help="DataHub platform, default hive")
     parser.add_argument("--database-pattern", help="Hive database regex")
@@ -117,6 +132,17 @@ def main() -> None:
 
     set_if_present(spark, "submit", args.spark_submit)
     set_if_present(spark, "job_file", str(args.spark_job_file) if args.spark_job_file else None)
+    set_if_present(spark, "master", args.spark_master)
+    set_if_present(spark, "deploy_mode", args.spark_deploy_mode)
+    set_if_present(spark, "queue", args.spark_queue)
+    set_if_present(spark, "driver_memory", args.spark_driver_memory)
+    set_if_present(spark, "driver_cores", args.spark_driver_cores)
+    set_if_present(spark, "executor_memory", args.spark_executor_memory)
+    set_if_present(spark, "executor_cores", args.spark_executor_cores)
+    set_if_present(spark, "num_executors", args.spark_num_executors)
+    set_if_present(spark, "app_name", args.spark_app_name)
+    if args.spark_conf:
+        spark["conf"] = args.spark_conf
     set_if_present(spark, "env", args.env)
     set_if_present(spark, "platform", args.platform)
     set_if_present(spark, "database_pattern", args.database_pattern)

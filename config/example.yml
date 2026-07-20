@@ -24,6 +24,15 @@ hdfs:
 spark:
   submit: "spark-submit"
   job_file: "jobs/transform_hms.py"
+  master: "yarn"
+  deploy_mode: "cluster"
+  queue: "default"
+  driver_memory: "2g"
+  driver_cores: 1
+  executor_memory: "4g"
+  executor_cores: 2
+  num_executors: 4
+  app_name: "hms-snapshot-to-datahub"
   env: "UAT"
   platform: "hive"
   database_pattern: "^hive$"
@@ -31,6 +40,8 @@ spark:
   source_timezone: "UTC"
   single_file: false
   max_file_size: "20M"
+  conf:
+    - "spark.sql.shuffle.partitions=200"
   # args:
-  #   - "--master"
-  #   - "yarn"
+  #   - "--archives"
+  #   - "hdfs:///deps/pyspark_env.tar.gz#environment"

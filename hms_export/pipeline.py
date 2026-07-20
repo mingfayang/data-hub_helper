@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
@@ -42,6 +43,19 @@ def upload_snapshot_to_hdfs(
     return target
 
 
+def delete_local_snapshot(local_snapshot: Path) -> None:
+    if local_snapshot.exists():
+        shutil.rmtree(local_snapshot)
+
+
+def delete_hdfs_snapshot(
+    hdfs_snapshot: str,
+    hdfs_bin: str = "hdfs",
+    runner: CommandRunner = default_runner,
+) -> None:
+    runner([hdfs_bin, "dfs", "-rm", "-r", "-f", hdfs_snapshot])
+
+
 def spark_submit_transform(
     snapshot: str,
     output: str,
@@ -55,11 +69,40 @@ def spark_submit_transform(
     source_timezone: str = "UTC",
     single_file: bool = False,
     max_file_size: Optional[str] = None,
+    master: Optional[str] = None,
+    deploy_mode: Optional[str] = None,
+    queue: Optional[str] = None,
+    driver_memory: Optional[str] = None,
+    driver_cores: Optional[int] = None,
+    executor_memory: Optional[str] = None,
+    executor_cores: Optional[int] = None,
+    num_executors: Optional[int] = None,
+    app_name: Optional[str] = None,
+    spark_conf: Sequence[str] = (),
     spark_args: Sequence[str] = (),
     runner: CommandRunner = default_runner,
 ) -> None:
+    submit_options: List[str] = []
+    option_pairs = [
+        ("--master", master),
+        ("--deploy-mode", deploy_mode),
+        ("--queue", queue),
+        ("--driver-memory", driver_memory),
+        ("--driver-cores", driver_cores),
+        ("--executor-memory", executor_memory),
+        ("--executor-cores", executor_cores),
+        ("--num-executors", num_executors),
+        ("--name", app_name),
+    ]
+    for option, value in option_pairs:
+        if value is not None:
+            submit_options.extend([option, str(value)])
+    for item in spark_conf:
+        submit_options.extend(["--conf", str(item)])
+
     command: List[str] = [
         spark_submit,
+        *submit_options,
         *spark_args,
         str(job_file),
         "--snapshot",
@@ -115,6 +158,11 @@ def validate_pipeline_config(config: Mapping[str, Any]) -> None:
         raise ValueError("hdfs.output_dir or --hdfs-output is required")
     if spark.get("args") is not None and not isinstance(spark["args"], list):
         raise ValueError("spark.args must be a list")
+    if spark.get("conf") is not None and not isinstance(spark["conf"], list):
+        raise ValueError("spark.conf must be a list")
+    for key in ("driver_cores", "executor_cores", "num_executors"):
+        if spark.get(key) is not None and int(spark[key]) <= 0:
+            raise ValueError(f"spark.{key} must be positive")
     if spark.get("max_file_size") is not None:
         parse_byte_size(str(spark["max_file_size"]))
     if spark.get("single_file") and spark.get("max_file_size") is not None:
@@ -152,13 +200,15 @@ def run_pipeline(
 
     local_snapshot = create_snapshot(config, snapshot_id)
     if hdfs_enabled:
+        hdfs_bin = str(hdfs.get("bin", "hdfs"))
         hdfs_snapshot = upload_snapshot_to_hdfs(
             local_snapshot,
             str(hdfs_snapshot_dir),
-            str(hdfs.get("bin", "hdfs")),
+            hdfs_bin,
             bool(hdfs.get("overwrite", False) if overwrite_hdfs is None else overwrite_hdfs),
             runner,
         )
+        delete_local_snapshot(local_snapshot)
     else:
         hdfs_snapshot = str(local_snapshot)
     spark_output = join_hdfs_path(hdfs_output, local_snapshot.name)
@@ -174,9 +224,21 @@ def run_pipeline(
         source_timezone=str(spark.get("source_timezone", "UTC")),
         single_file=bool(spark.get("single_file", False)),
         max_file_size=str(spark["max_file_size"]) if spark.get("max_file_size") is not None else None,
+        master=str(spark["master"]) if spark.get("master") is not None else None,
+        deploy_mode=str(spark["deploy_mode"]) if spark.get("deploy_mode") is not None else None,
+        queue=str(spark["queue"]) if spark.get("queue") is not None else None,
+        driver_memory=str(spark["driver_memory"]) if spark.get("driver_memory") is not None else None,
+        driver_cores=int(spark["driver_cores"]) if spark.get("driver_cores") is not None else None,
+        executor_memory=str(spark["executor_memory"]) if spark.get("executor_memory") is not None else None,
+        executor_cores=int(spark["executor_cores"]) if spark.get("executor_cores") is not None else None,
+        num_executors=int(spark["num_executors"]) if spark.get("num_executors") is not None else None,
+        app_name=str(spark["app_name"]) if spark.get("app_name") is not None else None,
+        spark_conf=[str(item) for item in spark.get("conf", [])],
         spark_args=[str(item) for item in spark.get("args", [])],
         runner=runner,
     )
+    if hdfs_enabled:
+        delete_hdfs_snapshot(hdfs_snapshot, hdfs_bin, runner)
 
     result = PipelineResult(local_snapshot, hdfs_snapshot, spark_output)
     print(f"local_snapshot={result.local_snapshot} hdfs_snapshot={result.hdfs_snapshot} hdfs_output={result.hdfs_output}")

@@ -76,7 +76,9 @@ python scripts/run_hms_pipeline.py \
 
 1. 读取 MySQL HMS 表，并在 `snapshot.output_dir/snapshot-id` 保存 gzip JSONL 快照；
 2. 用 `hdfs dfs -put` 上传快照目录到 `hdfs.snapshot_dir/snapshot-id`；
-3. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到 `hdfs.output_dir/snapshot-id`。
+3. 上传成功后删除本地 snapshot 目录；
+4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到 `hdfs.output_dir/snapshot-id`；
+5. Spark 成功生成 JSONL 输出后删除 HDFS snapshot 目录。
 
 生产常用参数可以在命令行覆盖：
 
@@ -96,17 +98,28 @@ python scripts/run_hms_pipeline.py \
   --hdfs-output hdfs:///warehouse/datahub-mcp \
   --spark-submit spark-submit \
   --spark-job-file jobs/transform_hms.py \
+  --spark-master yarn \
+  --spark-deploy-mode cluster \
+  --spark-queue root.datahub \
+  --spark-driver-memory 2g \
+  --spark-driver-cores 1 \
+  --spark-executor-memory 4g \
+  --spark-executor-cores 2 \
+  --spark-num-executors 4 \
+  --spark-app-name hms-snapshot-to-datahub \
+  --spark-conf spark.sql.shuffle.partitions=200 \
   --env UAT \
   --platform hive \
   --database-pattern '^hive$' \
   --metastore-name hive_metastore \
   --source-timezone UTC \
   --max-file-size 20M \
-  --spark-arg=--master \
-  --spark-arg yarn
+  --spark-arg=--verbose
 ```
 
 若需要重跑同一个 `snapshot-id`，增加 `--overwrite-hdfs` 会先删除已有 HDFS 快照目录。Spark 输出目录仍使用 Spark 的 `errorifexists` 模式，避免误覆盖结果。`--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
+
+常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name` 和多条 `conf`。`--spark-arg` 仍可用于补充不常用的 `spark-submit` 参数，例如 `--archives`、`--jars`。
 
 主程序不执行 `datahub ingest`，也不执行结果比较。它只负责校验参数、生成 snapshot、上传 HDFS、提交 Spark job。要验证程序输出与 DataHub 1.6.0 官方 connector 的 `datahub ingest -c recipes.yml` 输出一致，请使用集成测试脚本：
 
@@ -114,7 +127,7 @@ python scripts/run_hms_pipeline.py \
 bash integration/run_local_comparison.sh
 ```
 
-`--no-hdfs-enabled` 只用于本地验证；生产默认开启 HDFS 上传。
+`--no-hdfs-enabled` 只用于本地验证；生产默认开启 HDFS 上传。本地验证模式下 Spark 直接读取本地 snapshot，因此不会自动删除本地 snapshot。
 
 ## 4. 校验和导入
 
