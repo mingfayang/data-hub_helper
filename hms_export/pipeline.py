@@ -101,6 +101,7 @@ def spark_submit_transform(
     executor_cores: Optional[int] = None,
     num_executors: Optional[int] = None,
     app_name: Optional[str] = None,
+    archives: Optional[str] = None,
     spark_conf: Sequence[str] = (),
     spark_args: Sequence[str] = (),
     runner: CommandRunner = default_runner,
@@ -116,6 +117,7 @@ def spark_submit_transform(
         ("--executor-cores", executor_cores),
         ("--num-executors", num_executors),
         ("--name", app_name),
+        ("--archives", archives),
     ]
     for option, value in option_pairs:
         if value is not None:
@@ -270,6 +272,7 @@ def run_pipeline(
         executor_cores=int(spark["executor_cores"]) if spark.get("executor_cores") is not None else None,
         num_executors=int(spark["num_executors"]) if spark.get("num_executors") is not None else None,
         app_name=str(spark["app_name"]) if spark.get("app_name") is not None else None,
+        archives=str(spark["archives"]) if spark.get("archives") is not None else None,
         spark_conf=[str(item) for item in spark.get("conf", [])],
         spark_args=[str(item) for item in spark.get("args", [])],
         runner=runner,

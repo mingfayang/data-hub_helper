@@ -75,6 +75,7 @@ def main() -> None:
     parser.add_argument("--spark-executor-cores", type=int, help="executor cores")
     parser.add_argument("--spark-num-executors", type=int, help="number of executors")
     parser.add_argument("--spark-app-name", help="Spark application name")
+    parser.add_argument("--spark-archives", help="spark-submit --archives value, for example hdfs:///deps/venv.tar.gz#environment")
     parser.add_argument(
         "--overwrite-spark-output",
         action=argparse.BooleanOptionalAction,
@@ -147,6 +148,7 @@ def main() -> None:
     set_if_present(spark, "executor_cores", args.spark_executor_cores)
     set_if_present(spark, "num_executors", args.spark_num_executors)
     set_if_present(spark, "app_name", args.spark_app_name)
+    set_if_present(spark, "archives", args.spark_archives)
     set_if_present(spark, "overwrite_output", args.overwrite_spark_output)
     if args.spark_conf:
         spark["conf"] = args.spark_conf

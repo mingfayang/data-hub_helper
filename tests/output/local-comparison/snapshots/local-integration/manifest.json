@@ -1,6 +1,6 @@
 {
   "snapshot_id": "local-integration",
-  "started_at": "2026-07-20T08:03:01.772746+00:00",
+  "started_at": "2026-07-21T04:09:39.063031+00:00",
   "database": "hive_metastore_test",
   "consistent_snapshot": true,
   "tables": [
@@ -51,5 +51,5 @@
     }
   ],
   "complete": true,
-  "completed_at": "2026-07-20T08:03:01.924316+00:00"
+  "completed_at": "2026-07-21T04:09:39.256601+00:00"
 }

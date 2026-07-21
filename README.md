@@ -3,7 +3,7 @@
 这个项目把 Hive Metastore 的读取和 DataHub 元数据生成拆成两段：
 
 1. `snapshot_mysql.py` 只对 MySQL 做逐表 `SELECT *`，使用服务端游标流式读取，按分片写成 gzip JSONL；不在 MySQL 执行 JOIN、GROUP BY 或临时表查询。
-2. `transform_hms.py` 用 Spark 读取快照，在 Spark 中关联 HMS 表并输出 DataHub MetadataChangeProposal（MCP）JSONL。
+2. `transform_hms.py` 用 Spark 读取快照，在 Spark 中关联 HMS 表并输出 DataHub MetadataChangeProposal（MCP）JSON 文件。
 
 输出覆盖数据库容器、表/视图、字段、分区字段、存储位置/格式、owner、comment 和 HMS table parameters。默认不读取 `PARTITIONS`、`PARTITION_PARAMS`：这两张表通常占 HMS 的绝大部分，且 DataHub 的表级目录并不需要逐分区记录。
 
@@ -58,7 +58,7 @@ spark-submit jobs/transform_hms.py \
   --database-pattern '^hive$'
 ```
 
-集群运行时，`--snapshot` 和 `--output` 可以是 HDFS/S3 路径。输出是一个目录，其中每个 `part-*` 文件均为一行一个 MCP。Spark 默认会写多个 part 文件，不应强制 `coalesce(1)`；大数据量下单文件会重新形成瓶颈。
+集群运行时，`--snapshot` 和 `--output` 可以是 HDFS/S3 路径。输出是一个目录，其中每个 `mcp-*.json` 文件都是合法 JSON 数组，数组内每个对象是一条 MCP。文件名使用递增后缀区分，例如 `mcp-00000.json`、`mcp-00001.json`。Spark 默认会写多个 JSON 文件，不应强制 `coalesce(1)`；大数据量下单文件会重新形成瓶颈。
 
 如确实需要一个文件，可在数据量可控时增加 `--single-file`。该选项只减少 MCP 输出文件数，不改变内容。
 
@@ -77,8 +77,8 @@ python scripts/run_hms_pipeline.py \
 1. 读取 MySQL HMS 表，并在 `snapshot.output_dir/snapshot-id` 保存 gzip JSONL 快照；
 2. 用 `hdfs dfs -put` 上传快照目录到 `hdfs.snapshot_dir/snapshot-id`；
 3. 上传成功后删除本地 snapshot 目录；
-4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSONL 输出到固定目录 `hdfs.output_dir/mysql.database`；
-5. Spark 成功生成 JSONL 输出后执行 `hdfs dfs -chmod -R 777 hdfs.output_dir/mysql.database`；
+4. 用 `spark-submit` 运行 `jobs/transform_hms.py`，读取 HDFS 快照，并把 DataHub MCP JSON 文件输出到固定目录 `hdfs.output_dir/mysql.database`；
+5. Spark 成功生成 JSON 输出后执行 `hdfs dfs -chmod -R 777 hdfs.output_dir/mysql.database`；
 6. 删除 HDFS snapshot 目录。
 
 生产常用参数可以在命令行覆盖：
@@ -109,6 +109,7 @@ python scripts/run_hms_pipeline.py \
   --spark-executor-cores 2 \
   --spark-num-executors 4 \
   --spark-app-name hms-snapshot-to-datahub \
+  --spark-archives hdfs:///deps/pyspark_venv.tar.gz#environment \
   --overwrite-spark-output \
   --spark-conf spark.sql.shuffle.partitions=200 \
   --env UAT \
@@ -136,9 +137,9 @@ HDFS 上会使用两个目录：
 
 如果不配置 `--overwrite-spark-output`，程序不会删除已有 Spark 输出目录；当 `hdfs.output_dir/mysql.database` 已存在时，Spark 会按 `errorifexists` 行为报错退出，避免误覆盖结果。
 
-`--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSONL 总字节数估算分区数，从而控制 part 文件大小。`--single-file` 不能和 `--max-file-size` 同时使用。
+`--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSON 总字节数估算分区数，从而控制 `mcp-*.json` 文件大小。拆分只发生在 MCP 记录之间，每个输出文件仍然是完整合法的 JSON 数组。`--single-file` 不能和 `--max-file-size` 同时使用。
 
-常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name` 和多条 `conf`。`--spark-arg` 仍可用于补充不常用的 `spark-submit` 参数，例如 `--archives`、`--jars`。
+常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name`、`archives` 和多条 `conf`。`--spark-archives` 会直接映射为 `spark-submit --archives`，可用于上传 Python 虚拟环境，例如 `hdfs:///deps/pyspark_venv.tar.gz#environment`。`--spark-arg` 仍可用于补充更少用的 `spark-submit` 参数，例如 `--jars`。
 
 主程序不执行 `datahub ingest`，也不执行结果比较。它只负责校验参数、生成 snapshot、上传 HDFS、提交 Spark job。要验证程序输出与 DataHub 1.6.0 官方 connector 的 `datahub ingest -c recipes.yml` 输出一致，请使用集成测试脚本：
 
@@ -153,7 +154,7 @@ bash integration/run_local_comparison.sh
 先执行作业自带的结构校验；转换遇到损坏的快照、重复主键或非法 URN 名称时会直接失败。然后逐个导入 Spark part 文件：
 
 ```bash
-for file in data/datahub-mcp/part-*; do
+for file in data/datahub-mcp/mcp-*.json; do
   MCP_FILE="$file" datahub ingest -c recipes/ingest_output.yml || exit 1
 done
 ```
@@ -177,7 +178,7 @@ python scripts/compare_datahub_output.py \
 比较器支持两种模式。默认模式用于开发排查，会把不同输入形态展开为可比较的 aspect：
 
 - DataHub MCE、展开 MCP、`aspect.value` 包装 MCP；
-- JSON 数组、JSONL 文件或 Spark `part-*` 目录；
+- JSON 数组、JSONL 文件或 Spark `mcp-*.json` 目录；
 - 不同 container URN：按 `containerProperties.name` 归一化；
 - schema 字段顺序、owner 顺序、subtype 顺序；
 - 忽略 `created`、`lastModified` 等运行时审计字段。
@@ -219,6 +220,6 @@ equal=True baseline=746 candidate=746 missing=0 extra=0 different=0
 - `platform_instance` → Spark 的 `--platform-instance`，会进入 dataset URN、container GUID 和 `dataPlatformInstance` aspect；当前 recipe 固定为 `hive`。
 - `schema_pattern.allow: [".*"]` → 程序侧默认 `--database-pattern '.*'`，即不过滤 Hive 数据库名（`DBS.NAME`）。
 - `host_port/database/username/password` → `config/*.yml` 的 MySQL 连接配置；`database` 同时作为 DataHub root container 名称和 Spark 输出子目录名。
-- file sink → Spark 输出的 MCP JSONL 目录。
+- file sink → Spark 输出的 MCP JSON 目录。
 
 建议第一次仅选择一个 Hive database，与原 connector 的输出做 URN、字段数、comment、owner 抽样比对；确认后再跑全量。

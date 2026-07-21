@@ -1,0 +1,8 @@
+[
+{"entityType":"container","entityUrn":"urn:li:container:f2d758e87ffe1694cd9563f4e960f1b8","changeType":"UPSERT","aspectName":"dataPlatformInstance","aspect":{"value":"{\"platform\":\"urn:li:dataPlatform:hive\",\"instance\":\"urn:li:dataPlatformInstance:(urn:li:dataPlatform:hive,hive)\"}","contentType":"application/json"}},
+{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.hive.test_table_038,UAT)","changeType":"UPSERT","aspectName":"container","aspect":{"value":"{\"container\":\"urn:li:container:f2d758e87ffe1694cd9563f4e960f1b8\"}","contentType":"application/json"}},
+{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.hive.test_table_088,UAT)","changeType":"UPSERT","aspectName":"subTypes","aspect":{"value":"{\"typeNames\":[\"Table\"]}","contentType":"application/json"}},
+{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.hive.test_table_046,UAT)","changeType":"UPSERT","aspectName":"dataPlatformInstance","aspect":{"value":"{\"platform\":\"urn:li:dataPlatform:hive\",\"instance\":\"urn:li:dataPlatformInstance:(urn:li:dataPlatform:hive,hive)\"}","contentType":"application/json"}},
+{"entityType":"dataset","entityUrn":"urn:li:dataset:(urn:li:dataPlatform:hive,hive.hive.test_table_099,UAT)","changeType":"UPSERT","aspectName":"dataPlatformInstance","aspect":{"value":"{\"platform\":\"urn:li:dataPlatform:hive\",\"instance\":\"urn:li:dataPlatformInstance:(urn:li:dataPlatform:hive,hive)\"}","contentType":"application/json"}}
+]
+

@@ -80,6 +80,13 @@ def test_transform_complete_snapshot_end_to_end(tmp_path: Path, spark_submit: st
     create_snapshot(snapshot)
     result = run_job(spark_submit, snapshot, output)
     assert result.returncode == 0, result.stdout + result.stderr
+    json_files = sorted(output.glob("mcp-*.json"))
+    assert json_files
+    assert not list(output.glob("part-*"))
+    for file in json_files:
+        parsed = json.loads(file.read_text())
+        assert isinstance(parsed, list)
+        assert all(isinstance(item, dict) for item in parsed)
     records = load_records(output)
     # 5 root-container + 6 schema-container + 6 per target dataset + one viewProperties.
     assert len(records) == 24
@@ -101,6 +108,22 @@ def test_transform_complete_snapshot_end_to_end(tmp_path: Path, spark_submit: st
     assert (orders, "browsePathsV2") in by_key
     assert by_key[(view, "subTypes")] == {"typeNames": ["View"]}
     assert by_key[(view, "viewProperties")]["viewLogic"] == "select id from orders"
+
+
+def test_transform_max_file_size_keeps_each_file_valid_json(tmp_path: Path, spark_submit: str) -> None:
+    snapshot, output = tmp_path / "snapshot", tmp_path / "output"
+    create_snapshot(snapshot)
+    result = run_job(spark_submit, snapshot, output, "--max-file-size", "1k")
+    assert result.returncode == 0, result.stdout + result.stderr
+    json_files = sorted(output.glob("mcp-*.json"))
+    assert len(json_files) > 1
+    loaded = []
+    for file in json_files:
+        parsed = json.loads(file.read_text())
+        assert isinstance(parsed, list)
+        loaded.extend(parsed)
+    records = load_records(output)
+    assert len(loaded) == len(records) == 24
 
 
 def test_transform_rejects_incomplete_snapshot(tmp_path: Path, spark_submit: str) -> None:

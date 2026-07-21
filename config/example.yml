@@ -33,6 +33,7 @@ spark:
   executor_cores: 2
   num_executors: 4
   app_name: "hms-snapshot-to-datahub"
+  archives: "hdfs:///deps/pyspark_venv.tar.gz#environment"
   overwrite_output: false
   env: "UAT"
   platform: "hive"

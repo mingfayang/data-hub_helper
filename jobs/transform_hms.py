@@ -169,8 +169,37 @@ def read_table(spark: SparkSession, root: str, name: str) -> DataFrame:
     return reader.json(f"{root.rstrip('/')}/{name}/*.jsonl.gz")
 
 
+def rename_part_files_as_json(spark: SparkSession, output: str) -> None:
+    jvm = spark.sparkContext._jvm
+    path = jvm.org.apache.hadoop.fs.Path(output)
+    filesystem = path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration())
+    statuses = filesystem.listStatus(path)
+    part_statuses = sorted(
+        [
+            status
+            for status in statuses
+            if status.isFile() and status.getPath().getName().startswith("part-")
+        ],
+        key=lambda item: item.getPath().getName(),
+    )
+    part_files = []
+    for status in part_statuses:
+        if status.getLen() == 0:
+            filesystem.delete(status.getPath(), False)
+        else:
+            part_files.append(status.getPath())
+    part_files = sorted(
+        part_files,
+        key=lambda item: item.getName(),
+    )
+    for index, source in enumerate(part_files):
+        target = jvm.org.apache.hadoop.fs.Path(path, f"mcp-{index:05d}.json")
+        if source.getName() != target.getName():
+            filesystem.rename(source, target)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Convert an HMS snapshot to DataHub MCP JSONL")
+    parser = argparse.ArgumentParser(description="Convert an HMS snapshot to DataHub MCP JSON arrays")
     parser.add_argument("--snapshot", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--env", default="PROD")
@@ -422,11 +451,16 @@ def main() -> None:
     output = events.select(F.to_json(F.struct("*")).alias("value"))
     if max_file_size is not None:
         total_bytes = output.select(
-            F.sum(F.length(F.encode(F.col("value"), "UTF-8")) + F.lit(1)).alias("bytes")
+            F.sum(F.length(F.encode(F.col("value"), "UTF-8")) + F.lit(2)).alias("bytes")
         ).first()["bytes"] or 0
         output = output.repartition(max(1, int(math.ceil(total_bytes / max_file_size))))
-    writer = output.write.mode("errorifexists")
-    writer.text(args.output)
+    json_arrays = output.rdd.mapPartitions(
+        lambda rows: (
+            ["[\n" + ",\n".join(row.value for row in rows) + "\n]\n"]
+        )
+    ).filter(lambda value: value != "[\n\n]\n")
+    json_arrays.saveAsTextFile(args.output)
+    rename_part_files_as_json(spark, args.output)
     print(json.dumps({"databases": dbs.count(), "tables": base.count(), "mcps": events.count()}))
     spark.stop()
 

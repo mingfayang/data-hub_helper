@@ -32,8 +32,10 @@ def input_files(path: Path) -> List[Path]:
     if not path.is_dir():
         raise FileNotFoundError(path)
     return sorted(
-        item for item in path.rglob("part-*")
-        if item.is_file() and not item.name.startswith(("_", "."))
+        item for item in path.rglob("*")
+        if item.is_file()
+        and not item.name.startswith(("_", "."))
+        and (item.name.startswith("part-") or item.suffix == ".json")
     )
 
 
