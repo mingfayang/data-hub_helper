@@ -130,6 +130,18 @@ HDFS 上会使用两个目录：
 
 例如 `--hdfs-output hdfs:///warehouse/datahub-mcp --mysql-database hive_metastore` 会始终输出到 `hdfs:///warehouse/datahub-mcp/hive_metastore`。`snapshot-id` 不参与最终输出目录命名，因此 HDFS 上最终只保留这一份 Spark JSON 输出目录。
 
+最终目录中只应该保留 `mcp-*.json` 文件。每个文件都是 UTF-8 文本 JSON 数组，可以直接查看：
+
+```bash
+hdfs dfs -cat hdfs:///warehouse/datahub-mcp/hive_metastore/mcp-00000.json | head
+```
+
+下载时只下载 `mcp-*.json`，不要下载隐藏校验文件或 `_SUCCESS`：
+
+```bash
+hdfs dfs -get 'hdfs:///warehouse/datahub-mcp/hive_metastore/mcp-*.json' ./datahub-mcp/
+```
+
 `snapshot-id` 只用于临时 snapshot 目录命名：本地目录为 `snapshot.output_dir/snapshot-id`，HDFS 临时目录为 `hdfs.snapshot_dir/snapshot-id`。如果不传 `--snapshot-id`，程序会自动生成 UTC 秒级名称，如 `snapshot-20260720T042201Z`。
 
 若需要重跑同一个 `snapshot-id`，可以分别控制 snapshot 和 Spark 输出是否覆盖：

@@ -198,6 +198,16 @@ def rename_part_files_as_json(spark: SparkSession, output: str) -> None:
             filesystem.rename(source, target)
 
 
+def cleanup_non_json_output_files(spark: SparkSession, output: str) -> None:
+    jvm = spark.sparkContext._jvm
+    path = jvm.org.apache.hadoop.fs.Path(output)
+    filesystem = path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration())
+    for status in filesystem.listStatus(path):
+        name = status.getPath().getName()
+        if not (status.isFile() and name.startswith("mcp-") and name.endswith(".json")):
+            filesystem.delete(status.getPath(), True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert an HMS snapshot to DataHub MCP JSON arrays")
     parser.add_argument("--snapshot", required=True)
@@ -218,7 +228,11 @@ def main() -> None:
     if args.single_file and max_file_size is not None:
         raise ValueError("--single-file cannot be used with --max-file-size")
 
-    spark = SparkSession.builder.appName("hms-snapshot-to-datahub").getOrCreate()
+    spark = (
+        SparkSession.builder.appName("hms-snapshot-to-datahub")
+        .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.RawLocalFileSystem")
+        .getOrCreate()
+    )
     spark.sparkContext.setLogLevel("WARN")
     spark.conf.set("spark.sql.session.timeZone", args.source_timezone)
     spark.conf.set("spark.sql.mapKeyDedupPolicy", "LAST_WIN")
@@ -459,8 +473,12 @@ def main() -> None:
             ["[\n" + ",\n".join(row.value for row in rows) + "\n]\n"]
         )
     ).filter(lambda value: value != "[\n\n]\n")
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    hadoop_conf.set("mapreduce.output.fileoutputformat.compress", "false")
+    hadoop_conf.set("mapred.output.compress", "false")
     json_arrays.saveAsTextFile(args.output)
     rename_part_files_as_json(spark, args.output)
+    cleanup_non_json_output_files(spark, args.output)
     print(json.dumps({"databases": dbs.count(), "tables": base.count(), "mcps": events.count()}))
     spark.stop()
 

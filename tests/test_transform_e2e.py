@@ -83,8 +83,9 @@ def test_transform_complete_snapshot_end_to_end(tmp_path: Path, spark_submit: st
     json_files = sorted(output.glob("mcp-*.json"))
     assert json_files
     assert not list(output.glob("part-*"))
+    assert sorted(file.name for file in output.iterdir()) == [file.name for file in json_files]
     for file in json_files:
-        parsed = json.loads(file.read_text())
+        parsed = json.loads(file.read_text(encoding="utf-8"))
         assert isinstance(parsed, list)
         assert all(isinstance(item, dict) for item in parsed)
     records = load_records(output)
@@ -117,9 +118,10 @@ def test_transform_max_file_size_keeps_each_file_valid_json(tmp_path: Path, spar
     assert result.returncode == 0, result.stdout + result.stderr
     json_files = sorted(output.glob("mcp-*.json"))
     assert len(json_files) > 1
+    assert sorted(file.name for file in output.iterdir()) == [file.name for file in json_files]
     loaded = []
     for file in json_files:
-        parsed = json.loads(file.read_text())
+        parsed = json.loads(file.read_text(encoding="utf-8"))
         assert isinstance(parsed, list)
         loaded.extend(parsed)
     records = load_records(output)
