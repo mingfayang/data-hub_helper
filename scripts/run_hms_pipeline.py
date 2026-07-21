@@ -77,6 +77,16 @@ def main() -> None:
     parser.add_argument("--spark-app-name", help="Spark application name")
     parser.add_argument("--spark-archives", help="spark-submit --archives value, for example hdfs:///deps/venv.tar.gz#environment")
     parser.add_argument(
+        "--package-current-venv",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="package the active virtualenv, upload it to HDFS, and pass it through spark-submit --archives",
+    )
+    parser.add_argument("--venv-path", help="virtualenv root to package; default uses VIRTUAL_ENV or the current Python executable")
+    parser.add_argument("--venv-hdfs-dir", help="HDFS directory for the generated virtualenv archive; default hdfs:///deps")
+    parser.add_argument("--venv-archive-name", help="generated virtualenv archive filename; default venv.tar.gz")
+    parser.add_argument("--venv-archive-alias", help="spark --archives alias after #; default envir")
+    parser.add_argument(
         "--overwrite-spark-output",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -149,6 +159,11 @@ def main() -> None:
     set_if_present(spark, "num_executors", args.spark_num_executors)
     set_if_present(spark, "app_name", args.spark_app_name)
     set_if_present(spark, "archives", args.spark_archives)
+    set_if_present(spark, "package_current_venv", args.package_current_venv)
+    set_if_present(spark, "venv_path", args.venv_path)
+    set_if_present(spark, "venv_hdfs_dir", args.venv_hdfs_dir)
+    set_if_present(spark, "venv_archive_name", args.venv_archive_name)
+    set_if_present(spark, "venv_archive_alias", args.venv_archive_alias)
     set_if_present(spark, "overwrite_output", args.overwrite_spark_output)
     if args.spark_conf:
         spark["conf"] = args.spark_conf

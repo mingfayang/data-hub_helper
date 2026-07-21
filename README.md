@@ -109,7 +109,9 @@ python scripts/run_hms_pipeline.py \
   --spark-executor-cores 2 \
   --spark-num-executors 4 \
   --spark-app-name hms-snapshot-to-datahub \
-  --spark-archives hdfs:///deps/pyspark_venv.tar.gz#environment \
+  --package-current-venv \
+  --spark-archives hdfs:///deps/venv.tar.gz#envir \
+  --spark-conf spark.pyspark.python=./envir/bin/python \
   --overwrite-spark-output \
   --spark-conf spark.sql.shuffle.partitions=200 \
   --env UAT \
@@ -139,7 +141,21 @@ HDFS 上会使用两个目录：
 
 `--max-file-size` 支持 `20k`、`20M`、`1G` 等写法，Spark 会按输出 JSON 总字节数估算分区数，从而控制 `mcp-*.json` 文件大小。拆分只发生在 MCP 记录之间，每个输出文件仍然是完整合法的 JSON 数组。`--single-file` 不能和 `--max-file-size` 同时使用。
 
-常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name`、`archives` 和多条 `conf`。`--spark-archives` 会直接映射为 `spark-submit --archives`，可用于上传 Python 虚拟环境，例如 `hdfs:///deps/pyspark_venv.tar.gz#environment`。`--spark-arg` 仍可用于补充更少用的 `spark-submit` 参数，例如 `--jars`。
+常用 Spark 资源参数都可以在入口暴露或写入 `config/*.yml` 的 `spark:` 段：`master`、`deploy_mode`、`queue`、`driver_memory`、`driver_cores`、`executor_memory`、`executor_cores`、`num_executors`、`app_name`、`archives` 和多条 `conf`。`--spark-archives` 会直接映射为 `spark-submit --archives`；`--spark-arg` 仍可用于补充更少用的 `spark-submit` 参数，例如 `--jars`。
+
+如果需要把当前已激活的 Python 虚拟环境一起提交给 Spark，增加 `--package-current-venv`。程序会优先读取 `VIRTUAL_ENV`，否则使用当前 Python 可执行文件路径来反推虚拟环境根目录，这和在 shell 中看 `which python` 的路径是同一个思路。例如当前 Python 是 `/opt/app/env/bin/python`，程序会打包 `/opt/app/env/` 下的内容，但 tar 包内不会包含外层 `env/` 目录；解压后的根目录直接包含 `bin/`、`lib/`、`pyvenv.cfg` 等内容。
+
+推荐用法：
+
+```bash
+python scripts/run_hms_pipeline.py \
+  --config config/uat.yml \
+  --package-current-venv \
+  --spark-archives hdfs:///deps/venv.tar.gz#envir \
+  --spark-conf spark.pyspark.python=./envir/bin/python
+```
+
+这会生成本地 `venv.tar.gz`，上传到 `hdfs:///deps/venv.tar.gz`，并提交 Spark 参数 `--archives hdfs:///deps/venv.tar.gz#envir`。本地 tar 上传成功后会立即删除；Spark 成功结束后，程序会删除 HDFS 上的 `hdfs:///deps/venv.tar.gz`。如果没有传 `--spark-archives`，默认会使用 `hdfs:///deps/venv.tar.gz#envir`；也可以通过 `--venv-hdfs-dir`、`--venv-archive-name`、`--venv-archive-alias` 分别控制 HDFS 目录、文件名和 `#` 后的解压目录名。
 
 主程序不执行 `datahub ingest`，也不执行结果比较。它只负责校验参数、生成 snapshot、上传 HDFS、提交 Spark job。要验证程序输出与 DataHub 1.6.0 官方 connector 的 `datahub ingest -c recipes.yml` 输出一致，请使用集成测试脚本：
 

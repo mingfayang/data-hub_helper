@@ -33,7 +33,12 @@ spark:
   executor_cores: 2
   num_executors: 4
   app_name: "hms-snapshot-to-datahub"
-  archives: "hdfs:///deps/pyspark_venv.tar.gz#environment"
+  package_current_venv: false
+  archives: "hdfs:///deps/venv.tar.gz#envir"
+  # venv_path: "/opt/app/env"
+  venv_hdfs_dir: "hdfs:///deps"
+  venv_archive_name: "venv.tar.gz"
+  venv_archive_alias: "envir"
   overwrite_output: false
   env: "UAT"
   platform: "hive"
@@ -44,6 +49,5 @@ spark:
   max_file_size: "20M"
   conf:
     - "spark.sql.shuffle.partitions=200"
-  # args:
-  #   - "--archives"
-  #   - "hdfs:///deps/pyspark_env.tar.gz#environment"
+    # 如果 package_current_venv=true，并且 Spark job 需要使用该 Python 环境：
+    # - "spark.pyspark.python=./envir/bin/python"

@@ -1,3 +1,4 @@
+import tarfile
 from pathlib import Path
 from typing import Sequence
 from unittest.mock import patch
@@ -6,13 +7,20 @@ import pytest
 
 from hms_export.pipeline import (
     chmod_hdfs_output,
+    delete_hdfs_file,
     delete_hdfs_output,
     delete_hdfs_snapshot,
+    delete_local_file,
     delete_local_output,
     delete_local_snapshot,
+    hdfs_basename,
+    hdfs_parent,
     join_hdfs_path,
+    package_virtualenv,
     run_pipeline,
     spark_submit_transform,
+    split_archive_spec,
+    upload_file_to_hdfs,
     upload_snapshot_to_hdfs,
     validate_pipeline_config,
 )
@@ -60,6 +68,52 @@ def test_upload_snapshot_to_hdfs_builds_hdfs_commands(tmp_path: Path) -> None:
     ]
 
 
+def test_hdfs_file_path_helpers() -> None:
+    assert hdfs_parent("hdfs:///deps/venv.tar.gz") == "hdfs:///deps"
+    assert hdfs_basename("hdfs:///deps/venv.tar.gz") == "venv.tar.gz"
+    assert split_archive_spec("hdfs:///deps/venv.tar.gz#envir") == ("hdfs:///deps/venv.tar.gz", "envir")
+    assert split_archive_spec("hdfs:///deps/venv.tar.gz") == ("hdfs:///deps/venv.tar.gz", None)
+
+
+def test_package_virtualenv_archives_contents_without_env_directory(tmp_path: Path) -> None:
+    venv = tmp_path / "env"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "lib").mkdir()
+    (venv / "bin" / "python").write_text("#!/usr/bin/env python\n")
+    (venv / "lib" / "site.py").write_text("# fake site\n")
+    (venv / "pyvenv.cfg").write_text("home = /opt/python\n")
+
+    archive = package_virtualenv(tmp_path / "venv.tar.gz", venv_root=venv)
+
+    with tarfile.open(archive, "r:gz") as tar:
+        names = set(tar.getnames())
+    assert "bin" in names
+    assert "bin/python" in names
+    assert "lib/site.py" in names
+    assert "pyvenv.cfg" in names
+    assert "env" not in names
+    assert "env/bin/python" not in names
+
+
+def test_upload_file_to_hdfs_builds_hdfs_commands(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    local_archive = tmp_path / "venv.tar.gz"
+    local_archive.write_text("archive")
+    target = upload_file_to_hdfs(
+        local_archive,
+        "hdfs:///deps",
+        hdfs_bin="hdfs",
+        overwrite=True,
+        runner=runner,
+    )
+    assert target == "hdfs:///deps/venv.tar.gz"
+    assert runner.commands == [
+        ["hdfs", "dfs", "-mkdir", "-p", "hdfs:///deps"],
+        ["hdfs", "dfs", "-rm", "-f", "hdfs:///deps/venv.tar.gz"],
+        ["hdfs", "dfs", "-put", str(local_archive), "hdfs:///deps"],
+    ]
+
+
 def test_delete_local_snapshot_removes_snapshot_directory(tmp_path: Path) -> None:
     local_snapshot = tmp_path / "snapshot-1"
     local_snapshot.mkdir()
@@ -68,10 +122,23 @@ def test_delete_local_snapshot_removes_snapshot_directory(tmp_path: Path) -> Non
     assert not local_snapshot.exists()
 
 
+def test_delete_local_file_removes_file(tmp_path: Path) -> None:
+    local_file = tmp_path / "venv.tar.gz"
+    local_file.write_text("archive")
+    delete_local_file(local_file)
+    assert not local_file.exists()
+
+
 def test_delete_hdfs_snapshot_builds_hdfs_rm_command() -> None:
     runner = RecordingRunner()
     delete_hdfs_snapshot("hdfs:///tmp/snapshots/snapshot-1", hdfs_bin="hdfs", runner=runner)
     assert runner.commands == [["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///tmp/snapshots/snapshot-1"]]
+
+
+def test_delete_hdfs_file_builds_hdfs_rm_command() -> None:
+    runner = RecordingRunner()
+    delete_hdfs_file("hdfs:///deps/venv.tar.gz", hdfs_bin="hdfs", runner=runner)
+    assert runner.commands == [["hdfs", "dfs", "-rm", "-f", "hdfs:///deps/venv.tar.gz"]]
 
 
 def test_delete_local_output_removes_output_directory(tmp_path: Path) -> None:
@@ -209,6 +276,14 @@ def test_validate_pipeline_config_rejects_invalid_spark_resource_counts(tmp_path
         validate_pipeline_config(config)
 
 
+def test_validate_pipeline_config_rejects_packaged_venv_without_hdfs(tmp_path: Path) -> None:
+    config = minimal_config(tmp_path)
+    config["hdfs"] = {"enabled": False, "output_dir": str(tmp_path / "outputs")}
+    config["spark"]["package_current_venv"] = True
+    with pytest.raises(ValueError, match="package_current_venv"):
+        validate_pipeline_config(config)
+
+
 def test_validate_pipeline_config_rejects_invalid_mysql_database_for_output_dir(tmp_path: Path) -> None:
     config = minimal_config(tmp_path)
     config["mysql"]["database"] = "bad/name"
@@ -255,6 +330,46 @@ def test_run_pipeline_orchestrates_snapshot_upload_and_spark(tmp_path: Path) -> 
     assert runner.commands[2][-2:] == ["--max-file-size", "20k"]
     assert runner.commands[3] == ["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///outputs/hive"]
     assert runner.commands[4] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
+
+
+def test_run_pipeline_packages_current_venv_and_cleans_hdfs_archive(tmp_path: Path) -> None:
+    runner = RecordingRunner()
+    local_snapshot = tmp_path / "snapshot-1"
+    local_snapshot.mkdir()
+    local_archive = tmp_path / "venv.tar.gz"
+    config = minimal_config(tmp_path)
+    config["hdfs"]["overwrite"] = True
+    config["spark"] = {
+        "env": "UAT",
+        "package_current_venv": True,
+        "archives": "hdfs:///deps/venv.tar.gz#envir",
+        "conf": ["spark.pyspark.python=./envir/bin/python"],
+    }
+
+    def fake_package(archive_path: Path, *, venv_root: Path | None = None) -> Path:
+        assert archive_path == local_archive
+        assert venv_root is None
+        archive_path.write_text("archive")
+        return archive_path
+
+    with (
+        patch("hms_export.pipeline.create_snapshot", return_value=local_snapshot),
+        patch("hms_export.pipeline.package_virtualenv", side_effect=fake_package),
+    ):
+        result = run_pipeline(config, snapshot_id="snapshot-1", runner=runner)
+
+    assert result.hdfs_archive == "hdfs:///deps/venv.tar.gz"
+    assert not local_snapshot.exists()
+    assert not local_archive.exists()
+    assert runner.commands[3] == ["hdfs", "dfs", "-mkdir", "-p", "hdfs:///deps"]
+    assert runner.commands[4] == ["hdfs", "dfs", "-rm", "-f", "hdfs:///deps/venv.tar.gz"]
+    assert runner.commands[5] == ["hdfs", "dfs", "-put", str(local_archive), "hdfs:///deps"]
+    spark_command = runner.commands[6]
+    assert spark_command[spark_command.index("--archives") + 1] == "hdfs:///deps/venv.tar.gz#envir"
+    assert spark_command[spark_command.index("--conf") + 1] == "spark.pyspark.python=./envir/bin/python"
+    assert runner.commands[7] == ["hdfs", "dfs", "-chmod", "-R", "777", "hdfs:///outputs/hive"]
+    assert runner.commands[8] == ["hdfs", "dfs", "-rm", "-r", "-f", "hdfs:///snapshots/snapshot-1"]
+    assert runner.commands[9] == ["hdfs", "dfs", "-rm", "-f", "hdfs:///deps/venv.tar.gz"]
 
 
 def test_run_pipeline_uses_mysql_database_for_fixed_spark_output(tmp_path: Path) -> None:
