@@ -116,6 +116,10 @@ def data_platform_instance_aspect(platform: str, platform_instance: str | None =
     return F.struct(platform_urn.alias("platform"))
 
 
+def drop_map_keys(map_col: Any, keys: list[str]) -> Any:
+    return F.map_filter(map_col, lambda key, _: ~key.isin(*keys))
+
+
 def schema_type(native_type: Any) -> Any:
     t = F.lower(native_type)
     type_name = (
@@ -316,6 +320,10 @@ def main() -> None:
         F.lit("table_location"), F.coalesce(F.col("LOCATION"), F.lit("")),
         F.lit("create_date"), F.from_unixtime(F.col("CREATE_TIME"), "yyyy-MM-dd"),
     )
+    sanitized_params = drop_map_keys(
+        F.coalesce("PARAMS", F.create_map()),
+        ["table_type", "table_location", "create_date", "partitioned_columns"],
+    )
     partition_names = partition_keys.groupBy("TBL_ID").agg(
         F.concat_ws(",", F.sort_array(F.collect_list("PKEY_NAME"))).alias("PARTITIONED_COLUMNS")
     )
@@ -402,7 +410,7 @@ def main() -> None:
                     F.create_map(F.lit("is_view"), F.lit("True")),
                 ).otherwise(
                     F.map_concat(
-                        F.coalesce("PARAMS", F.create_map()),
+                        sanitized_params,
                         table_properties,
                         F.when(
                             F.col("PARTITIONED_COLUMNS").isNotNull(),

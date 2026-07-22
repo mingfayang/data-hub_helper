@@ -48,6 +48,8 @@ def create_snapshot(root: Path, complete: bool = True) -> None:
     write_table(root, "TABLE_PARAMS", [
         {"TBL_ID": 10, "PARAM_KEY": "comment", "PARAM_VALUE": "orders table"},
         {"TBL_ID": 10, "PARAM_KEY": "classification", "PARAM_VALUE": "gold"},
+        {"TBL_ID": 10, "PARAM_KEY": "table_type", "PARAM_VALUE": "SHOULD_NOT_WIN"},
+        {"TBL_ID": 10, "PARAM_KEY": "table_location", "PARAM_VALUE": "SHOULD_NOT_WIN"},
         {"TBL_ID": 11, "PARAM_KEY": "comment", "PARAM_VALUE": "orders view"},
     ])
 
@@ -97,6 +99,8 @@ def test_transform_complete_snapshot_end_to_end(tmp_path: Path, spark_submit: st
     assert not any("not_exported" in record.urn for record in records)
     assert by_key[(orders, "datasetProperties")]["description"] == "orders table"
     assert by_key[(orders, "datasetProperties")]["customProperties"]["classification"] == "gold"
+    assert by_key[(orders, "datasetProperties")]["customProperties"]["table_type"] == "EXTERNAL_TABLE"
+    assert by_key[(orders, "datasetProperties")]["customProperties"]["table_location"] == "s3://bucket/orders"
     assert (orders, "ownership") not in by_key
     fields = by_key[(orders, "schemaMetadata")]["fields"]
     assert [field["fieldPath"] for field in fields] == [
